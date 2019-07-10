@@ -1,6 +1,5 @@
 # imports - compatibility packages
 from __future__ import absolute_import
-
 # imports - standard packages
 import os
 import warnings
@@ -12,16 +11,20 @@ import pandas as pd
 import quandl
 
 # module imports
+from sklearn.preprocessing import MinMaxScaler
 from bulbea.config.app import AppConfig
 from bulbea.entity import Entity
 from bulbea._util import (
     _check_type,
     _check_str,
     _check_int,
+    _check_real,
     _check_pandas_series,
     _check_pandas_dataframe,
+    _check_pandas_timestamp,
     _check_iterable,
     _check_environment_variable_set,
+    _validate_in_range,
     _validate_date,
     _assign_if_none,
     _get_type_name,
@@ -39,10 +42,34 @@ import bulbea as bb
 
 pplt.style.use(AppConfig.PLOT_STYLE)
 
-def _get_cummulative_return(data):
-    cumret  = (data / data[0]) - 1
+def _sync_pandas_dataframe_ix(df1, df2):
+    _check_pandas_dataframe(df1, raise_err = True)
+    _check_pandas_dataframe(df2, raise_err = True)
+    ix1 = df1.index
+    ix2 = df2.index
+    if ix1.equals(ix2):
+        return (df1, df2)
+    diff = ix1.difference(ix2)
+    diff = diff.append(ix2.difference(ix1))
+    for ix in diff:
+        try:
+            df1 = df1.drop(ix)
+        except KeyError:
+            pass
+        try:
+            df2 = df2.drop(ix)
+        except KeyError:
+            pass
+    return (df1, df2)
 
+def _get_cummulative_return(data, base):
+    #cumret  = (data / data[0]) - 1
+    cumret  = (data / base) - 1
     return cumret
+
+def _reverse_cummulative_return(base, cumret):
+    ret = (cumret + 1) * base 
+    return ret
 
 def _get_bollinger_bands_columns(data):
     _check_pandas_dataframe(data, raise_err = True)
@@ -68,6 +95,103 @@ def _get_bollinger_bands_columns(data):
     ) for prefix in prefixes]
 
     return columns
+
+def _get_aroon_oscillator(data, period=152):
+    _check_pandas_dataframe(data, raise_err = True)
+    high_roll = data['High'].rolling(window=period)
+    low_roll = data['Low'].rolling(window=period)
+    aroon = pd.DataFrame(columns=["Up","Down"], index=data.index)
+    aroon["Up"] = (period-high_roll.apply(np.argmax, raw=True))/period * 100
+    aroon["Down"] = (period-low_roll.apply(np.argmin, raw=True))/period * 100
+    return aroon["Up"] - aroon["Down"]
+
+def _get_roc(data):
+    _check_pandas_dataframe(data, raise_err = True)
+    time = ['t+0', 't-1', 't-2']
+    col = ["ROC {time} ({attr})".format(time = t, attr = attribute) for attribute in data.columns for t in time]
+
+    ix = data.index
+    roc = pd.DataFrame(np.nan, columns=col, index=ix)
+    pn = data.shift(1)
+    roc[col[0]] = (data/pn - 1) * 100
+    for i in range(1, len(col)):
+        roc[col[i]] = roc[col[i-1]].shift(1)
+    test = pd.concat([data["Close"], roc[col]], axis=1)
+    return roc
+
+def _get_cmo(data, period):
+    _check_pandas_dataframe(data, raise_err = True)
+    _check_int(period, raise_err = True)
+    cmo = pd.DataFrame(columns=['CMO'], index=data.index)
+    s = pd.DataFrame(columns=['PosSum','NegSum'], index=data.index)
+    s['PosSum'] = np.where(data > data.shift(1), data + data.shift(1), 0)
+    s['NegSum'] = np.where(data <= data.shift(1), data + data.shift(1), 0)
+    pos_roll = s['PosSum'].rolling(window = period)
+    neg_roll = s['NegSum'].rolling(window = period)
+    cmo = (pos_roll.sum() - neg_roll.sum())/(pos_roll.sum() + neg_roll.sum()) * 100
+    return cmo
+
+def _get_ichimoku(data):
+    _check_pandas_dataframe(data, raise_err = True)
+    ix = data.index
+    ichimoku = pd.DataFrame(columns=["TL","SL","LS1","LS2","Cloud"],  
+                                    index=ix) 
+
+    roll_9 = data.rolling(window = 9)
+    roll_26 = data.rolling(window = 26)
+    roll_52 = data.rolling(window = 52)
+    ichimoku['TL'] = (roll_9['High'].max() + roll_9['Low'].min())/2
+    ichimoku['SL'] = (roll_26['High'].max() + roll_26['Low'].min())/2
+    ichimoku['LS1'] = ichimoku['TL'] + ichimoku['SL']
+    ichimoku['LS2'] = (roll_52['High'].max() + roll_52['Low'].min())/2
+    ichimoku['Cloud'] = (ichimoku['LS1'] - ichimoku['LS2']).rolling(window=26).sum()
+    return ichimoku
+
+
+def _get_high_low(data, n_week = 52):
+    _check_int(n_week, raise_err = True)
+    _check_pandas_dataframe(data, raise_err = True)
+
+    length = len(data.index)
+    _high = data['High']
+    _low = data['Low']
+    nhh_nll = pd.DataFrame(np.nan, columns=["NHH", "NLL"], index = data.index)
+    n = int(252/52 * n_week)
+    for i in range(1, length):
+        if i < n:
+            _high_frame = _high[:i+1].values
+            _low_frame = _low[:i+1].values
+            frame_len = i
+        else:
+            _high_frame = _high[i-n+1:i+1].values
+            _low_frame = _low[i-n+1:i+1].values
+            frame_len = n
+        try:
+            nhh_nll["NHH"].iloc[i] = frame_len - np.nanargmax(_high_frame)
+            nhh_nll["NLL"].iloc[i] = frame_len - np.nanargmin(_low_frame)
+        except:
+            nhh_nll["NHH"].iloc[i] = 0
+            nhh_nll["NLL"].iloc[i] = 0
+
+    return nhh_nll
+
+def _get_awesome(data):
+    _check_pandas_dataframe(data, raise_err = True)
+
+    columns   = list(data.columns)
+    ncols     =  len(columns)
+
+    attrs = ["High", "Low"]
+    df = data[attrs]
+    avg = pd.Series((df['High'] + df['Low'])/2)
+
+    roll_34 = avg.rolling(window = 34)
+    roll_5 = avg.rolling(window = 5)
+    mean_34 = roll_34.mean()
+    mean_5 = roll_5.mean()
+
+    awesome = mean_5 - mean_34
+    return awesome
 
 def _get_bollinger_bands(data, period = 50, bandwidth = 1):
     _check_int(period,    raise_err = True)
@@ -156,25 +280,18 @@ class Share(Entity):
     Date
     2003-05-15  18.6  18.849999  18.470001  18.73  71248800.0        1.213325
     '''
-    def __init__(self, source, ticker, start = None, end = None, latest = None, cache = False):
-        _check_str(source, raise_err = True)
+    def __init__(self, ticker, source = None, start = None, end = None, latest = None, cache = False, local_update=False):
         _check_str(ticker, raise_err = True)
-
-        envvar = AppConfig.ENVIRONMENT_VARIABLE['quandl_api_key']
-
-        if not _check_environment_variable_set(envvar):
-            message = Color.warn("Environment variable {envvar} for Quandl hasn't been set. A maximum of {max_calls} calls per day can be made. Visit {url} to get your API key.".format(envvar = envvar, max_calls = QUANDL_MAX_DAILY_CALLS, url = ABSURL_QUANDL))
-
-            warnings.warn(message)
-        else:
-            quandl.ApiConfig.api_key = os.getenv(envvar)
 
         self.source    = source
         self.ticker    = ticker
 
-        self.update(start = start, end = end, latest = latest, cache = cache)
+        self.update(start = start, end = end, latest = latest, cache = cache, local_update = local_update)
+        self.comps = {}
+        self.num_comps = 0
+        self._splits_base = 4
 
-    def update(self, start = None, end = None, latest = None, cache = False):
+    def update(self, start = None, end = None, latest = None, cache = False, local_update = False):
         '''
         Update the share with the latest available data.
 
@@ -184,12 +301,44 @@ class Share(Entity):
         >>> share = bb.Share(source = 'YAHOO', ticker = 'AAPL')
         >>> share.update()
         '''
-        self.data    = quandl.get('{database}/{code}'.format(
-            database = self.source,
-            code     = self.ticker
-        ))
+        if not local_update:
+            _check_str(self.source, raise_err = True)
+            envvar = AppConfig.ENVIRONMENT_VARIABLE['quandl_api_key']
+            if not _check_environment_variable_set(envvar):
+                message = Color.warn("Environment variable {envvar} for Quandl hasn't been set. A maximum of {max_calls} calls per day can be made. Visit {url} to get your API key.".format(envvar = envvar, max_calls = QUANDL_MAX_DAILY_CALLS, url = ABSURL_QUANDL))
+
+                warnings.warn(message)
+            else:
+                quandl.ApiConfig.api_key = os.getenv(envvar)
+
+            self.data    = quandl.get('{database}/{code}'.format(
+                database = self.source,
+                code     = self.ticker
+            ))
+        else:
+            envvar = AppConfig.ENVIRONMENT_VARIABLE['local_ohlc_storage']
+            if not _check_environment_variable_set(envvar):
+                message = Color.warn("Local ohlc storage not defined.")
+                warnings.warn(message)
+                return None
+            else:
+                local_storage_path = os.path.join(os.getenv(envvar), self.ticker + '.h5')
+                hdf = pd.HDFStore(local_storage_path)
+                df = hdf.get(self.ticker)
+                hdf.close()
+                if start == None:
+                    start = df.index[0]
+                if end == None:
+                    end = df.index[-1]
+                self.data = df.loc[start:end]
+
         self.length  =  len(self.data)
         self.attrs   = list(self.data.columns)
+
+    def attach_competitor(self, ticker, source = None, start = None, end = None, latest = None, cache = False, local_update=False):
+        self.comps[ticker] = Share(ticker, source, start, end, latest, cache, local_update)
+        self.data, self.comps[ticker].data = _sync_pandas_dataframe_ix(self.data, self.comps[ticker].data)
+        self.num_comps += 1
 
     def __len__(self):
         '''
@@ -202,6 +351,65 @@ class Share(Entity):
         9139
         '''
         return self.length
+
+    def high_low(self,
+                 n_week = 52):
+        _check_int(n_week, raise_err = True)
+
+        nhh_nll = _get_high_low(self.data, n_week)
+        return nhh_nll
+
+    def awesome(self):
+        '''
+        :Example:
+        '''
+
+        awesome = _get_awesome(self.data)
+        awesome = pd.DataFrame(awesome, columns=["Awesome"])
+        return awesome
+
+    def roc(self,
+            attrs     = 'Close'):
+        '''
+        :Example:
+        '''
+        _check_iterable(attrs, raise_err = True)
+
+        if _check_str(attrs):
+            attrs = [attrs]
+
+        data = self.data[attrs]
+        roc  = pd.DataFrame(_get_roc(data))
+
+        return roc
+
+    def ichimoku(self):
+        '''
+        :Example:
+        '''
+
+        data = self.data[['High','Low']]
+        ichimoku = pd.DataFrame(_get_ichimoku(data))
+
+        return pd.DataFrame(ichimoku['Cloud'])
+
+    def cmo(self, period = 50):
+        '''
+        :Example:
+        '''
+
+        data = self.data[['Close']]
+        cmo  = pd.DataFrame(_get_cmo(data, period), columns=['CMO'])
+        return cmo
+
+    def aro(self, period = 50):
+        '''
+        :Example:
+        '''
+
+        data = self.data[['High','Low']]
+        aro  = pd.DataFrame(_get_aroon_oscillator(data, period), columns=['ARO'])
+        return aro
 
     def bollinger_bands(self,
                         attrs     = 'Close',
@@ -250,54 +458,95 @@ class Share(Entity):
 
         return frames[0] if len(frames) == 1 else frames
 
-    def plot(self,
-             attrs           = 'Close',
-             global_mean     = False,
-             bollinger_bands = False,
-             period          = 50,
-             bandwidth       = 1,
-             subplots        = False, *args, **kwargs):
-        '''
-        :param attrs: `str` or `list` of attribute names of a share to plot, defaults to *Close* attribute
-        :type attrs: :obj: `str`, :obj:`list`
+    def build_data_prerequisites(self, prereq, comp_prereq=None):
+        self.prereq = prereq
+        self.comp_prereq = comp_prereq
 
-        :Example:
+    def build_data(self):
+        try:
+            _check_iterable(self.prereq, raise_err = True)
+            df = self.data
+            for op in self.prereq:
+                df = pd.concat([df, op()], axis=1, sort=True)
+                df = df.dropna()
+            if self.comp_prereq:
+                for op in self.comp_prereq:
+                    df = pd.concat([df, op()], axis=1, sort=True)
+                    df = df.dropna()
+            self.features = df
+        except NameError as e:
+            raise Exception("Share prerequisites must be set")
 
-        >>> import bulbea as bb
-        >>> share = bb.Share(source = 'YAHOO', ticker = 'AAPL')
-        >>> share.plot()
-        '''
-        _check_iterable(attrs, raise_err = True)
+    def build_splits(self,
+                     Xattrs      = ['Close'],
+                     yattrs      = ['Close'],
+                     cum_norm_attrs  = ['Close'],
+                     norm_attrs  = [],
+                     window      = 0.01,
+                     shift       = 1,
+                     normalize   = False):
 
-        if _check_str(attrs):
-            attrs  = [attrs]
+        _check_iterable(Xattrs, raise_err = True)
+        _check_iterable(yattrs, raise_err = True)
+        _check_iterable(cum_norm_attrs, raise_err = True)
+        _check_iterable(norm_attrs, raise_err = True)
+        _check_int(shift, raise_err = True)
+        _check_real(window, raise_err = True)
+        _validate_in_range(window, 0, 1, raise_err = True)
 
-        plot_stats = global_mean or bollinger_bands
-        subplots   = True if len(attrs) != 1 and plot_stats else subplots
-        axes       = self.data[attrs].plot(subplots = subplots, *args, **kwargs)
+        try:
+            df = self.features
+        except AttributeError as e:
+            print('Features not built yet, building now...')
+            self.build_data()
+            df = self.features
 
-        if plot_stats:
-            if subplots:
-                for i, attr in enumerate(attrs):
-                    data = self.data[attr]
-                    ax   = axes[i]
+        data = df[Xattrs].values
+        ycolumns = []
+        for i, attr in enumerate(df[Xattrs].columns):
+            if attr in yattrs:
+                ycolumns.append(i)
+                yattrs.remove(attr)
 
-                    if global_mean:
-                        _plot_global_mean(data, ax)
+        length = len(df.index)
+        window = int(np.rint(length * window))
+        offset = shift - 1
 
-                    if bollinger_bands:
-                        _plot_bollinger_bands(data, ax, period = period, bandwidth = bandwidth)
-            else:
-                attr = attrs[0]
-                data = self.data[attr]
+        splits = np.array([data[i if i is 0 else i + offset: i + window] for i in range(length - window)])
+        self.splits = np.zeros_like(splits)
+        self.splits[:,:,:] = splits[:,:,:]
+        self._splits_Xattr = Xattrs
+        self._splits_yattr = yattrs
+        self._splits_ycolumns = ycolumns
+        self._splits_window = window
 
-                if global_mean:
-                    _plot_global_mean(data, axes)
+        self.normalized = normalize
 
-                if bollinger_bands:
-                    _plot_bollinger_bands(data, axes, period = period, bandwidth = bandwidth)
+        if normalize:
+            cum_normalize_col = [i for i, attr in enumerate(df[Xattrs].columns) if attr in cum_norm_attrs]
+            _found = [attr for attr in df[Xattrs].columns if attr in cum_norm_attrs]
+            for i, split in enumerate(splits):
+                for j in range(split.shape[1]):
+                    if j in cum_normalize_col:
+                        splits[i,:,j] = _get_cummulative_return(split[:,j], split[-self._splits_base-1,j])
+            self._splits_cumnormattr = _found
 
-        return axes
+            if norm_attrs:
+                normalize_col = [i for i, attr in enumerate(df[Xattrs].columns) if attr in norm_attrs]
+                _found = [attr for attr in df[Xattrs].columns if attr in norm_attrs]
+                for i in range(splits.shape[2]):
+                    if i in normalize_col:
+                        scalar = MinMaxScaler(feature_range=(-1,1))
+                        splits[:,:,i] = scalar.fit_transform(splits[:,:,i])
+                self._splits_normcolumns = normalize_col
+                self._splits_normattr = _found
+
+            self.norm_splits = np.zeros_like(splits)
+            self.norm_splits[:,:,:] = splits[:,:,:]
+
+    def save_split_index(self, ix):
+        _check_int(ix, raise_err = True)
+        self._splits_index = ix
 
     def save(self, format_ = 'csv', filename = None):
         '''
@@ -317,3 +566,33 @@ class Share(Entity):
 
         if format_ is 'csv':
             self.data.to_csv(filename)
+
+    def return_data(self):
+        return self.data
+
+    def convert_prediction(self, x_col, y):
+        return _reverse_cummulative_return(x_col[0], y)
+
+    def return_xcols(self, data):
+        _check_type(data, np.ndarray, raise_err = True, expected_type_name = 'np.array')
+        size = data.shape
+        if len(size) != 3:
+            raise ValueError('Expected a np.array with size 3, got {l} instead.'.format(
+                l = len(size)
+            ))
+        return data[:,:-1]
+
+    def return_ycols(self, data):
+        _check_type(data, np.ndarray, raise_err = True, expected_type_name = 'np.array')
+        size = data.shape
+        if len(size) != 3:
+            raise ValueError('Expected a np.array with size 3, got {l} instead.'.format(
+                l = len(size)
+            ))
+        return data[:,-1,self._splits_ycolumns]
+
+    def return_splits(self):
+        if self.normalized:
+            return self.norm_splits
+        else:
+            return self.splits

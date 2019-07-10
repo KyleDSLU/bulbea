@@ -29,5 +29,6 @@ class AppConfig(BaseConfig):
         'twitter_api_key': 'BULBEA_TWITTER_API_KEY',
         'twitter_api_secret': 'BULBEA_TWITTER_API_SECRET',
         'twitter_access_token': 'BULBEA_TWITTER_ACCESS_TOKEN',
-        'twitter_access_token_secret': 'BULBEA_TWITTER_ACCESS_TOKEN_SECRET'
+        'twitter_access_token_secret': 'BULBEA_TWITTER_ACCESS_TOKEN_SECRET',
+        'local_ohlc_storage': 'LOCAL_OHLC_STORAGE'
     }

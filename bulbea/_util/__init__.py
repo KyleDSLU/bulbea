@@ -9,6 +9,7 @@ from bulbea._util._util import (
     _check_real,
     _check_pandas_series,
     _check_pandas_dataframe,
+    _check_pandas_timestamp,
     _check_iterable,
     _check_sequence,
     _check_environment_variable_set,

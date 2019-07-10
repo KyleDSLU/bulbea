@@ -63,6 +63,9 @@ def _check_pandas_series(data, raise_err = False):
 def _check_pandas_dataframe(data, raise_err = False):
     return _check_type(data, pd.DataFrame, raise_err = raise_err, expected_type_name = 'pandas.DataFrame')
 
+def _check_pandas_timestamp(data, raise_err = False):
+    return _check_type(data, pd.Timestamp, raise_err = raise_err, expected_type_name = 'pandas.Timestamp')
+
 def _check_iterable(o, raise_err = False):
     return _check_type(o, collections.Iterable, raise_err = raise_err, expected_type_name = '(str, list, tuple)')
 
