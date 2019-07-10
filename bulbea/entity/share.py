@@ -418,6 +418,11 @@ class Share(Entity):
         diff = pd.DataFrame((data[col1] - data[col2])/data[col2], columns=['{col1}-{col2}'.format(col1=col1, col2=col2)])
         return diff
 
+    def open_shift(self):
+        data = self.data['Open'].shift(1)
+        open_shift = pd.DataFrame(data.values, columns=['Open+1'], index=data.index)
+        return open_shift
+
     def bollinger_bands(self,
                         attrs     = 'Close',
                         period    = 50,
