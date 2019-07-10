@@ -289,7 +289,7 @@ class Share(Entity):
         self.update(start = start, end = end, latest = latest, cache = cache, local_update = local_update)
         self.comps = {}
         self.num_comps = 0
-        self._splits_base = 4
+        self._splits_base = 1
 
     def update(self, start = None, end = None, latest = None, cache = False, local_update = False):
         '''
@@ -410,6 +410,13 @@ class Share(Entity):
         data = self.data[['High','Low']]
         aro  = pd.DataFrame(_get_aroon_oscillator(data, period), columns=['ARO'])
         return aro
+
+    def high_open_diff(self):
+        col1 = 'High'
+        col2 = 'Open'
+        data = self.data[[col1, col2]]
+        diff = pd.DataFrame((data[col1] - data[col2])/data[col2], columns=['{col1}-{col2}'.format(col1=col1, col2=col2)])
+        return diff
 
     def bollinger_bands(self,
                         attrs     = 'Close',
