@@ -71,6 +71,12 @@ def _reverse_cummulative_return(base, cumret):
     ret = (cumret + 1) * base 
     return ret
 
+def _get_period_slope(data, period):
+    _check_pandas_dataframe(data, raise_err = True)
+    shift = data.shift(period)
+    ret = (data - shift)/data
+    return ret
+
 def _get_bollinger_bands_columns(data):
     _check_pandas_dataframe(data, raise_err = True)
 
@@ -382,6 +388,22 @@ class Share(Entity):
         roc  = pd.DataFrame(_get_roc(data))
 
         return roc
+
+    def close_slope(self):
+        return self.week_month_3month_slope('Close')
+
+    def week_month_3month_slope(self, attr='Close'):
+        data = pd.DataFrame(self.data[attr])
+        columns = ['1W_', '1M_', '3M_']
+        columns = [col+attr for col in columns]
+
+        slope = [_get_period_slope(data, days) for days in [5, 20, 60]]
+        slope = pd.concat(slope, axis=1, sort=True)
+        slope.columns = columns
+
+        print(slope)
+        return slope
+
 
     def ichimoku(self):
         '''
