@@ -95,7 +95,7 @@ def _get_bollinger_bands_columns(data):
 
     attr       = columns[0]
     prefixes   = ['Lower', 'Mean', 'Upper']
-    columns    = ['{prefix} ({attr})'.format(
+    columns    = ['{prefix}_{attr}'.format(
         prefix = prefix,
         attr   = attr
     ) for prefix in prefixes]
@@ -213,50 +213,6 @@ def _get_bollinger_bands(data, period = 50, bandwidth = 1):
 
     return (lower, mean, upper)
 
-def _get_share_filename(share, extension = None):
-    _check_type(share, bb.Share, raise_err = True, expected_type_name = 'bulbea.Share')
-
-    if extension is not None:
-        _check_str(extension, raise_err = True)
-
-    source    = share.source
-    ticker    = share.ticker
-
-    start     = _get_datetime_str(share.data.index.min(), format_ = '%Y%m%d')
-    end       = _get_datetime_str(share.data.index.max(), format_ = '%Y%m%d')
-
-    filename = '{source}_{ticker}_{start}_{end}'.format(
-        source = source,
-        ticker = ticker,
-        start  = start,
-        end    = end
-    )
-
-    if extension:
-        filename = '{filename}.{extension}'.format(
-            filename  = filename,
-            extension = extension
-        )
-
-    return filename
-
-def _plot_global_mean(data, axes):
-    _check_pandas_series(data, raise_err = True)
-
-    mean     = data.mean()
-    axes.axhline(mean, color = 'b', linestyle = '-.')
-
-def _plot_bollinger_bands(data, axes, period = 50, bandwidth = 1):
-    _check_int(period,    raise_err = True)
-    _check_int(bandwidth, raise_err = True)
-
-    _check_pandas_series(data, raise_err = True)
-
-    lowr, mean, uppr = _get_bollinger_bands(data, period = period, bandwidth = bandwidth)
-
-    axes.plot(lowr, color = 'r', linestyle = '--')
-    axes.plot(mean, color = 'g', linestyle = '--')
-    axes.plot(uppr, color = 'r', linestyle = '--')
 
 class Share(Entity):
     '''
@@ -441,9 +397,15 @@ class Share(Entity):
         return diff
 
     def open_shift(self):
-        data = self.data['Open'].shift(1)
+        data = self.data['Open'].shift(-1)
         open_shift = pd.DataFrame(data.values, columns=['Open+1'], index=data.index)
         return open_shift
+
+    def bolban_close(self):
+        return self.bollinger_bands(attrs='Close')
+
+    def bolban_high(self):
+        return self.bollinger_bands(attrs='High')
 
     def bollinger_bands(self,
                         attrs     = 'Close',
