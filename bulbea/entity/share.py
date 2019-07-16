@@ -284,7 +284,9 @@ class Share(Entity):
                 warnings.warn(message)
                 return None
             else:
-                local_storage_path = os.path.join(os.getenv(envvar), self.ticker + '.h5')
+                # ASSUMING 1d OHLC STORAGE -- TO BE FIXED
+                local_storage_path = os.path.join(os.getenv(envvar), '1d/')
+                local_storage_path = os.path.join(local_storage_path, self.ticker + '.h5')
                 hdf = pd.HDFStore(local_storage_path)
                 df = hdf.get(self.ticker)
                 hdf.close()
@@ -402,10 +404,10 @@ class Share(Entity):
         return open_shift
 
     def bolban_close(self):
-        return self.bollinger_bands(attrs='Close')
+        return self.bollinger_bands(attrs='Close', period=10)
 
     def bolban_high(self):
-        return self.bollinger_bands(attrs='High')
+        return self.bollinger_bands(attrs='High', period=10)
 
     def bollinger_bands(self,
                         attrs     = 'Close',
