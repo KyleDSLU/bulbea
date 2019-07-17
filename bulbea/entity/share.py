@@ -251,7 +251,7 @@ class Share(Entity):
         self.update(start = start, end = end, latest = latest, cache = cache, local_update = local_update)
         self.comps = {}
         self.num_comps = 0
-        self._splits_base = 1
+        self._splits_base = 5
 
     def update(self, start = None, end = None, latest = None, cache = False, local_update = False):
         '''
@@ -404,10 +404,13 @@ class Share(Entity):
         return open_shift
 
     def bolban_close(self):
-        return self.bollinger_bands(attrs='Close', period=10)
+        return self.bollinger_bands(attrs='Close', period=25)
 
     def bolban_high(self):
-        return self.bollinger_bands(attrs='High', period=10)
+        return self.bollinger_bands(attrs='High', period=25)
+
+    def bolban_low(self):
+        return self.bollinger_bands(attrs='Low', period=25)
 
     def bollinger_bands(self,
                         attrs     = 'Close',
