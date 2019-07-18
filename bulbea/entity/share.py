@@ -359,7 +359,6 @@ class Share(Entity):
         slope = pd.concat(slope, axis=1, sort=True)
         slope.columns = columns
 
-        print(slope)
         return slope
 
 
@@ -597,3 +596,7 @@ class Share(Entity):
             return self.norm_splits
         else:
             return self.splits
+
+    def return_split_from_date(self, date):
+        ix = np.where(self.features.index==date)[0]
+        
