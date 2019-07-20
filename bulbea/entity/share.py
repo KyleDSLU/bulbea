@@ -67,10 +67,6 @@ def _get_cummulative_return(data, base):
     cumret  = (data / base) - 1
     return cumret
 
-def _reverse_cummulative_return(base, cumret):
-    ret = (cumret + 1) * base 
-    return ret
-
 def _get_period_slope(data, period):
     _check_pandas_dataframe(data, raise_err = True)
     shift = data.shift(period)
@@ -512,9 +508,14 @@ class Share(Entity):
         window = int(np.rint(length * window))
         offset = shift - 1
 
-        splits = np.array([data[i if i is 0 else i + offset: i + window] for i in range(length - window)])
+        splits = np.array([data[i + offset: i + window] for i in range(length - window + 1)])
+        index = df.index.drop(df.index[:window-1])
+        splits_ix = {ix: i for i, ix in enumerate(index)}
+
         self.splits = np.zeros_like(splits)
         self.splits[:,:,:] = splits[:,:,:]
+        self.splits_ix = splits_ix
+
         self._splits_Xattr = Xattrs
         self._splits_yattr = yattrs
         self._splits_ycolumns = ycolumns
@@ -570,9 +571,6 @@ class Share(Entity):
     def return_data(self):
         return self.data
 
-    def convert_prediction(self, x_col, y):
-        return _reverse_cummulative_return(x_col[0], y)
-
     def return_xcols(self, data):
         _check_type(data, np.ndarray, raise_err = True, expected_type_name = 'np.array')
         size = data.shape
@@ -597,6 +595,6 @@ class Share(Entity):
         else:
             return self.splits
 
-    def return_split_from_date(self, date):
-        ix = np.where(self.features.index==date)[0]
+    def return_split_from_date(self, dates):
+        return np.array([self.return_splits()[self.splits_ix[date]] for date in dates])
         
