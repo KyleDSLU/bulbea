@@ -73,6 +73,14 @@ def _get_period_slope(data, period):
     ret = (data - shift)/data
     return ret
 
+def _get_encoded_days(data):
+    _check_pandas_dataframe(data, raise_err = True)
+    index = data.index
+    days = {"Monday": 0, "Tuesday":1, "Wednesday":2, "Thursday":3, "Friday":4}
+    encoded_days = [[1 if indice.weekday()==day_val else 0 for day_val in days.values()] for indice in index]
+    encoded_days = pd.DataFrame(encoded_days, columns=days.keys(), index=index)
+    return encoded_days
+
 def _get_bollinger_bands_columns(data):
     _check_pandas_dataframe(data, raise_err = True)
 
@@ -357,6 +365,9 @@ class Share(Entity):
 
         return slope
 
+    def encoded_days(self):
+        data = self.data[['Close']]
+        return _get_encoded_days(data)
 
     def ichimoku(self):
         '''
@@ -389,6 +400,13 @@ class Share(Entity):
     def high_open_diff(self):
         col1 = 'High'
         col2 = 'Open'
+        data = self.data[[col1, col2]]
+        diff = pd.DataFrame((data[col1] - data[col2])/data[col2], columns=['{col1}-{col2}'.format(col1=col1, col2=col2)])
+        return diff
+
+    def high_low_diff(self):
+        col1 = 'High'
+        col2 = 'Low'
         data = self.data[[col1, col2]]
         diff = pd.DataFrame((data[col1] - data[col2])/data[col2], columns=['{col1}-{col2}'.format(col1=col1, col2=col2)])
         return diff
