@@ -3,7 +3,6 @@ from __future__ import absolute_import
 # imports - standard packages
 import os
 import warnings
-
 # imports - third-party packages
 import numpy as np
 import matplotlib.pyplot as pplt
@@ -42,6 +41,10 @@ import bulbea as bb
 
 pplt.style.use(AppConfig.PLOT_STYLE)
 
+class IndexObject:
+    def __init__(self, columns):
+        self.columns = {column: i for i, column in enumerate(columns)}
+
 def _sync_pandas_dataframe_ix(df1, df2):
     _check_pandas_dataframe(df1, raise_err = True)
     _check_pandas_dataframe(df2, raise_err = True)
@@ -64,7 +67,10 @@ def _sync_pandas_dataframe_ix(df1, df2):
 
 def _get_cummulative_return(data, base):
     #cumret  = (data / data[0]) - 1
-    cumret  = (data / base) - 1
+    if base == 0:
+        cumret = data*0
+    else:
+        cumret  = (data / base) - 1
     return cumret
 
 def _get_period_slope(data, period):
@@ -157,33 +163,130 @@ def _get_ichimoku(data):
     ichimoku['Cloud'] = (ichimoku['LS1'] - ichimoku['LS2']).rolling(window=26).sum()
     return ichimoku
 
+def _get_ranged_high_m_low(data):
+    _check_pandas_dataframe(data, raise_err = True)
+    
+    r = 3
+    ranged_high = data['High'][::-1].rolling(window=r).max()[::-1]
+    high_low = pd.DataFrame(columns=["HighR3-Low"], index=data.index)
+    high_low["HighR3-Low"] = (ranged_high - data["Low"])/data["Low"]
 
-def _get_high_low(data, n_week = 52):
-    _check_int(n_week, raise_err = True)
+    return high_low
+
+def _get_time_close(data, tt_hour, tt_min, ticker)
+    _check_int(tt, raise_err = True)
+    _check_pandas_series(data, raise_err = True)
+    envvar = AppConfig.ENVIRONMENT_VARIABLE['local_ohlc_storage']
+    if not _check_environment_variable_set(envvar):
+        message = Color.warn("Local ohlc storage not defined.")
+        warnings.warn(message)
+        return None
+    else:
+        # ASSUMING 1d OHLC STORAGE -- TO BE FIXED
+        local_storage_path = os.path.join(os.getenv(envvar), '5m/')
+    local_storage_path = os.path.join(local_storage_path, ticker + '.h5')
+    if os.path.exists(local_storage_path):
+        hdf = pd.HDFStore(local_storage_path)
+        df = hdf.get(ticker)
+        col = "{h}:{m}_Close".format(h=tt_hour, m=tt_min)
+        tt = pd.DataFrame(columns=[col], index=df.index)
+        tt[col] = df.at_time('{h}:{m}'.format(h=tt_hour, m=tt_min))
+        tt.index = tt.index.tz_localize(None).normalize()
+        return tt
+    else:
+        raise ValueError("Local OHLC Storage Not Found")
+
+def _get_time_high(data, tt_hour, tt_min, ticker)
+    _check_int(tt, raise_err = True)
+    _check_pandas_series(data, raise_err = True)
+    envvar = AppConfig.ENVIRONMENT_VARIABLE['local_ohlc_storage']
+    if not _check_environment_variable_set(envvar):
+        message = Color.warn("Local ohlc storage not defined.")
+        warnings.warn(message)
+        return None
+    else:
+        # ASSUMING 1d OHLC STORAGE -- TO BE FIXED
+        local_storage_path = os.path.join(os.getenv(envvar), '5m/')
+    local_storage_path = os.path.join(local_storage_path, ticker + '.h5')
+    if os.path.exists(local_storage_path):
+        hdf = pd.HDFStore(local_storage_path)
+        df = hdf.get(ticker)
+        col = "{h}:{m}_High".format(h=tt_hour, m=tt_min)
+        tt = pd.DataFrame(columns=[col], index=df.index.normalize().tz_localize(None).drop_duplicates())
+        tt[col] = [df.between_time("9:30", "{h}:{m}".format(h=tt_hour, m=tt_min)).loc["{y}-{m}-{d}".format(y=day.year, m=day.month, d=day.day)]["High"].max() for day in tt.index]
+        return tt
+    else:
+        raise ValueError("Local OHLC Storage Not Found")
+
+def _get_time_low(data, tt_hour, tt_min, ticker)
+    _check_int(tt, raise_err = True)
+    _check_pandas_series(data, raise_err = True)
+    envvar = AppConfig.ENVIRONMENT_VARIABLE['local_ohlc_storage']
+    if not _check_environment_variable_set(envvar):
+        message = Color.warn("Local ohlc storage not defined.")
+        warnings.warn(message)
+        return None
+    else:
+        # ASSUMING 1d OHLC STORAGE -- TO BE FIXED
+        local_storage_path = os.path.join(os.getenv(envvar), '5m/')
+    local_storage_path = os.path.join(local_storage_path, ticker + '.h5')
+    if os.path.exists(local_storage_path):
+        hdf = pd.HDFStore(local_storage_path)
+        df = hdf.get(ticker)
+        col = "{h}:{m}_Low".format(h=tt_hour, m=tt_min)
+        tt = pd.DataFrame(columns=[col], index=df.index.normalize().tz_localize(None).drop_duplicates())
+        tt[col] = [df.between_time("9:30", "{h}:{m}".format(h=tt_hour, m=tt_min)).loc["{y}-{m}-{d}".format(y=day.year, m=day.month, d=day.day)]["Low"].min() for day in tt.index]
+        return tt
+    else:
+        raise ValueError("Local OHLC Storage Not Found")
+
+def _get_time_volume(data, tt_hour, tt_min, ticker)
+    _check_int(tt, raise_err = True)
+    _check_pandas_series(data, raise_err = True)
+    envvar = AppConfig.ENVIRONMENT_VARIABLE['local_ohlc_storage']
+    if not _check_environment_variable_set(envvar):
+        message = Color.warn("Local ohlc storage not defined.")
+        warnings.warn(message)
+        return None
+    else:
+        # ASSUMING 1d OHLC STORAGE -- TO BE FIXED
+        local_storage_path = os.path.join(os.getenv(envvar), '5m/')
+    local_storage_path = os.path.join(local_storage_path, ticker + '.h5')
+    if os.path.exists(local_storage_path):
+        hdf = pd.HDFStore(local_storage_path)
+        df = hdf.get(ticker)
+        col = "{h}:{m}_Volume".format(h=tt_hour, m=tt_min)
+        tt = pd.DataFrame(columns=[col], index=df.index.normalize().tz_localize(None).drop_duplicates())
+        tt[col] = [df.between_time("9:30", "{h}:{m}".format(h=tt_hour, m=tt_min)).loc["{y}-{m}-{d}".format(y=day.year, m=day.month, d=day.day)]["Volume"].sum() for day in tt.index]
+        return tt
+    else:
+        raise ValueError("Local OHLC Storage Not Found")
+    
+def _get_close_m_52w_high_low(data):
     _check_pandas_dataframe(data, raise_err = True)
 
-    length = len(data.index)
-    _high = data['High']
-    _low = data['Low']
-    nhh_nll = pd.DataFrame(np.nan, columns=["NHH", "NLL"], index = data.index)
-    n = int(252/52 * n_week)
-    for i in range(1, length):
-        if i < n:
-            _high_frame = _high[:i+1].values
-            _low_frame = _low[:i+1].values
-            frame_len = i
-        else:
-            _high_frame = _high[i-n+1:i+1].values
-            _low_frame = _low[i-n+1:i+1].values
-            frame_len = n
-        try:
-            nhh_nll["NHH"].iloc[i] = frame_len - np.nanargmax(_high_frame)
-            nhh_nll["NLL"].iloc[i] = frame_len - np.nanargmin(_low_frame)
-        except:
-            nhh_nll["NHH"].iloc[i] = 0
-            nhh_nll["NLL"].iloc[i] = 0
+    n = int(252/52 * 52)
 
-    return nhh_nll
+    high_low = pd.DataFrame(np.nan, columns=["52W_High", "52W_Low"], index = data.index)
+    high_low["52W_High"] = (data['High'].rolling(window = n).max() - data['Close']) / data['Close']
+    high_low["52W_Low"] = (data['Low'].rolling(window = n).min() - data['Close']) / data['Close']
+
+    return high_low
+
+def _get_consecutive_closings(data):
+    _check_pandas_dataframe(data, raise_err = True)
+    closings = pd.DataFrame(columns=["CC"], index=data.index)
+    cc = 0
+    close_diff = data['Close'] - data['Close'].shift(1)
+    for i in range(1, len(data.index)):
+        if close_diff.iloc[i] > 0 and cc >= 0:
+            cc += 1
+        elif close_diff.iloc[i] < 0 and cc <= 0:
+            cc -= 1
+        else:
+            cc = 0
+        closings['CC'].iloc[i] = cc
+    return closings
 
 def _get_awesome(data):
     _check_pandas_dataframe(data, raise_err = True)
@@ -203,6 +306,25 @@ def _get_awesome(data):
     awesome = mean_5 - mean_34
     return awesome
 
+def _get_rsi(data):
+    _check_pandas_dataframe(data, raise_err = True)
+    window = 14
+    close = pd.DataFrame(columns=["Diff", "Gain", "Loss"], index=data.index)
+    close["Diff"] = (data['Close']-data['Close'].shift(1))/data['Close']
+    mask = close["Diff"] < 0
+    close["Gain"] = close["Diff"].mask(mask)
+    close["Loss"] = close["Diff"].mask(~mask)
+
+    close_gain_count = close["Gain"].rolling(window=window).count().fillna(0)
+    avg_gain = close["Gain"].fillna(0).rolling(window=window).sum()/close_gain_count
+
+    close_loss_count = close["Loss"].rolling(window=window).count().fillna(0)
+    avg_loss = close["Loss"].fillna(0).rolling(window=window).sum()/close_loss_count
+
+    rsi = pd.DataFrame(columns=["RSI"], index=data.index)
+    rsi["RSI"] = 1 - (1/(1+avg_gain/avg_loss))
+    return rsi
+
 def _get_bollinger_bands(data, period = 50, bandwidth = 1):
     _check_int(period,    raise_err = True)
     _check_int(bandwidth, raise_err = True)
@@ -216,7 +338,6 @@ def _get_bollinger_bands(data, period = 50, bandwidth = 1):
     lower     = mean - bandwidth * std
 
     return (lower, mean, upper)
-
 
 class Share(Entity):
     '''
@@ -320,12 +441,9 @@ class Share(Entity):
         '''
         return self.length
 
-    def high_low(self,
-                 n_week = 52):
-        _check_int(n_week, raise_err = True)
-
-        nhh_nll = _get_high_low(self.data, n_week)
-        return nhh_nll
+    def close_m_high_low_52w(self):
+        high_low = _get_close_m_52w_high_low(self.data)
+        return high_low
 
     def awesome(self):
         '''
@@ -356,10 +474,10 @@ class Share(Entity):
 
     def week_month_3month_slope(self, attr='Close'):
         data = pd.DataFrame(self.data[attr])
-        columns = ['1W_', '1M_', '3M_']
+        columns = ['1W_', '1M_', '3M_', '1Y_']
         columns = [col+attr for col in columns]
 
-        slope = [_get_period_slope(data, days) for days in [5, 20, 60]]
+        slope = [_get_period_slope(data, days) for days in [5, 20, 60, 252]]
         slope = pd.concat(slope, axis=1, sort=True)
         slope.columns = columns
 
@@ -404,17 +522,50 @@ class Share(Entity):
         diff = pd.DataFrame((data[col1] - data[col2])/data[col2], columns=['{col1}-{col2}'.format(col1=col1, col2=col2)])
         return diff
 
-    def high_low_diff(self):
-        col1 = 'High'
-        col2 = 'Low'
-        data = self.data[[col1, col2]]
-        diff = pd.DataFrame((data[col1] - data[col2])/data[col2], columns=['{col1}-{col2}'.format(col1=col1, col2=col2)])
+    def ranged_high_low_diff(self):
+        data = self.data[['High', 'Low']]
+        diff = _get_ranged_high_m_low(data)
         return diff
+
+    def consecutive_closings(self):
+        return _get_consecutive_closings(self.data)
 
     def open_shift(self):
         data = self.data['Open'].shift(-1)
         open_shift = pd.DataFrame(data.values, columns=['Open+1'], index=data.index)
         return open_shift
+
+    def low_shift(self):
+        data = self.data['Low'].shift(-1)
+        open_shift = pd.DataFrame(data.values, columns=['Low+1'], index=data.index)
+        return open_shift
+
+    def prediction_time_close(self):
+        return _get_time_close(12, 30, self.ticker)
+
+    def prediction_time_low(self):
+        return _get_time_low(12, 30, self.ticker)
+
+    def prediction_time_high(self):
+        return _get_time_high(12, 30, self.ticker)
+
+    def prediction_time_volume(self):
+        return _get_time_volume(12, 30, self.ticker)
+
+    def trading_time_close(self):
+        return _get_time_close(15, 15, self.ticker)
+
+    def trading_time_low(self):
+        return _get_time_low(15, 15, self.ticker)
+
+    def trading_time_high(self):
+        return _get_time_high(15, 15, self.ticker)
+
+    def trading_time_volume(self):
+        return _get_time_volume(15, 15, self.ticker)
+
+    def rsi(self):
+        return _get_rsi(self.data)
 
     def bolban_close(self):
         return self.bollinger_bands(attrs='Close', period=25)
@@ -517,18 +668,19 @@ class Share(Entity):
 
         data = df[Xattrs].values
         ycolumns = []
+
         for i, attr in enumerate(df[Xattrs].columns):
             if attr in yattrs:
                 ycolumns.append(i)
-                yattrs.remove(attr)
 
         length = len(df.index)
-        window = int(np.rint(length * window))
+        window = 15
         offset = shift - 1
 
         splits = np.array([data[i + offset: i + window] for i in range(length - window + 1)])
         index = df.index.drop(df.index[:window-1])
         splits_ix = {ix: i for i, ix in enumerate(index)}
+        self.columns = IndexObject(df[Xattrs].columns)
 
         self.splits = np.zeros_like(splits)
         self.splits[:,:,:] = splits[:,:,:]
@@ -615,4 +767,34 @@ class Share(Entity):
 
     def return_split_from_date(self, dates):
         return np.array([self.return_splits()[self.splits_ix[date]] for date in dates])
-        
+
+    def split(self, train = 0.60):
+        '''
+        :param attrs: `str` or `list` of attribute names of a share, defaults to *Close* attribute
+        :type attrs: :obj: `str`, :obj:`list`
+        '''
+        _check_real(train, raise_err = True)
+
+        _validate_in_range(train, 0, 1, raise_err = True)
+
+        if self.normalized:
+            splits = self.norm_splits
+        else:
+            splits = self.splits
+
+        size   = len(splits)
+        split  = int(np.rint(train * size))
+
+        train  = splits[:split,:]
+        test   = splits[split:,:]
+
+        Xtrain, Xtest = self.return_xcols(train), self.return_xcols(test)
+
+        ytrain, ytest = self.return_ycols(train), self.return_ycols(test)
+        self.save_split_index(split)
+
+        return (Xtrain, Xtest, ytrain, ytest)
+    
+    def truncate(self, data_range):
+        self.data = self.data.iloc[-data_range:]
+            
