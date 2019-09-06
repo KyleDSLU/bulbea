@@ -45,6 +45,7 @@ class IndexObject:
     def __init__(self, columns):
         self.columns = {column: i for i, column in enumerate(columns)}
 
+
 def _sync_pandas_dataframe_ix(df1, df2):
     _check_pandas_dataframe(df1, raise_err = True)
     _check_pandas_dataframe(df2, raise_err = True)
@@ -73,10 +74,26 @@ def _get_cummulative_return(data, base):
         cumret  = (data / base) - 1
     return cumret
 
-def _get_period_slope(data, period):
+def _get_df_shift(data, col):
     _check_pandas_dataframe(data, raise_err = True)
+    return data[col].shift(-1)
+
+def _get_close_slope(data):
+    _check_pandas_dataframe(data, raise_err = True)
+    columns = ['1W_', '1M_', '3M_', '1Y_']
+    attr = 'Close'
+    columns = [col+attr for col in columns]
+
+    slope = [_get_period_slope(data['Close'], days) for days in [5, 20, 60, 252]]
+    slope = pd.concat(slope, axis=1, sort=True)
+    slope.columns = columns
+
+    return slope
+
+def _get_period_slope(data, period):
+    _check_pandas_series(data, raise_err = True)
     shift = data.shift(period)
-    ret = (data - shift)/data
+    ret = (data - shift)/data/period
     return ret
 
 def _get_encoded_days(data):
@@ -173,100 +190,54 @@ def _get_ranged_high_m_low(data):
 
     return high_low
 
-def _get_time_close(data, tt_hour, tt_min, ticker)
-    _check_int(tt, raise_err = True)
-    _check_pandas_series(data, raise_err = True)
-    envvar = AppConfig.ENVIRONMENT_VARIABLE['local_ohlc_storage']
-    if not _check_environment_variable_set(envvar):
-        message = Color.warn("Local ohlc storage not defined.")
-        warnings.warn(message)
-        return None
-    else:
-        # ASSUMING 1d OHLC STORAGE -- TO BE FIXED
-        local_storage_path = os.path.join(os.getenv(envvar), '5m/')
-    local_storage_path = os.path.join(local_storage_path, ticker + '.h5')
-    if os.path.exists(local_storage_path):
-        hdf = pd.HDFStore(local_storage_path)
-        df = hdf.get(ticker)
-        col = "{h}:{m}_Close".format(h=tt_hour, m=tt_min)
-        tt = pd.DataFrame(columns=[col], index=df.index)
-        tt[col] = df.at_time('{h}:{m}'.format(h=tt_hour, m=tt_min))
-        tt.index = tt.index.tz_localize(None).normalize()
-        return tt
-    else:
-        raise ValueError("Local OHLC Storage Not Found")
+def _get_time_close(data, tt_hour, tt_min):
+    _check_pandas_dataframe(data, raise_err = True)
+    _check_int(tt_hour, raise_err = True)
+    _check_int(tt_min, raise_err = True)
+    col = "{h}{m}_Close".format(h=tt_hour, m=tt_min)
+    tt = pd.DataFrame(columns=[col], index=data.index.normalize().tz_localize(None).drop_duplicates())
+    data = data['Close'].at_time('{h}:{m}'.format(h=tt_hour, m=tt_min))
+    data.index = data.index.normalize().tz_localize(None)
+    tt[col] = data
+    tt.index = tt.index.tz_localize(None).normalize()
+    return tt
 
-def _get_time_high(data, tt_hour, tt_min, ticker)
-    _check_int(tt, raise_err = True)
-    _check_pandas_series(data, raise_err = True)
-    envvar = AppConfig.ENVIRONMENT_VARIABLE['local_ohlc_storage']
-    if not _check_environment_variable_set(envvar):
-        message = Color.warn("Local ohlc storage not defined.")
-        warnings.warn(message)
-        return None
-    else:
-        # ASSUMING 1d OHLC STORAGE -- TO BE FIXED
-        local_storage_path = os.path.join(os.getenv(envvar), '5m/')
-    local_storage_path = os.path.join(local_storage_path, ticker + '.h5')
-    if os.path.exists(local_storage_path):
-        hdf = pd.HDFStore(local_storage_path)
-        df = hdf.get(ticker)
-        col = "{h}:{m}_High".format(h=tt_hour, m=tt_min)
-        tt = pd.DataFrame(columns=[col], index=df.index.normalize().tz_localize(None).drop_duplicates())
-        tt[col] = [df.between_time("9:30", "{h}:{m}".format(h=tt_hour, m=tt_min)).loc["{y}-{m}-{d}".format(y=day.year, m=day.month, d=day.day)]["High"].max() for day in tt.index]
-        return tt
-    else:
-        raise ValueError("Local OHLC Storage Not Found")
+def _get_time_high(data, tt_hour, tt_min):
+    _check_pandas_dataframe(data, raise_err = True)
+    _check_int(tt_hour, raise_err = True)
+    _check_int(tt_min, raise_err = True)
+    close = _get_time_close(data, tt_hour, tt_min)
 
-def _get_time_low(data, tt_hour, tt_min, ticker)
-    _check_int(tt, raise_err = True)
-    _check_pandas_series(data, raise_err = True)
-    envvar = AppConfig.ENVIRONMENT_VARIABLE['local_ohlc_storage']
-    if not _check_environment_variable_set(envvar):
-        message = Color.warn("Local ohlc storage not defined.")
-        warnings.warn(message)
-        return None
-    else:
-        # ASSUMING 1d OHLC STORAGE -- TO BE FIXED
-        local_storage_path = os.path.join(os.getenv(envvar), '5m/')
-    local_storage_path = os.path.join(local_storage_path, ticker + '.h5')
-    if os.path.exists(local_storage_path):
-        hdf = pd.HDFStore(local_storage_path)
-        df = hdf.get(ticker)
-        col = "{h}:{m}_Low".format(h=tt_hour, m=tt_min)
-        tt = pd.DataFrame(columns=[col], index=df.index.normalize().tz_localize(None).drop_duplicates())
-        tt[col] = [df.between_time("9:30", "{h}:{m}".format(h=tt_hour, m=tt_min)).loc["{y}-{m}-{d}".format(y=day.year, m=day.month, d=day.day)]["Low"].min() for day in tt.index]
-        return tt
-    else:
-        raise ValueError("Local OHLC Storage Not Found")
+    col = "{h}{m}_High".format(h=tt_hour, m=tt_min)
+    tt = pd.DataFrame(columns=[col], index=data.index.normalize().tz_localize(None).drop_duplicates())
+    tt[col] = [data.between_time("9:30", "{h}:{m}".format(h=tt_hour, m=tt_min)).loc["{y}-{m}-{d}".format(y=day.year, m=day.month, d=day.day)]["High"].max() for day in tt.index]
+    tt[col] = (tt.values - close.values) / close.values
+    return tt
 
-def _get_time_volume(data, tt_hour, tt_min, ticker)
-    _check_int(tt, raise_err = True)
-    _check_pandas_series(data, raise_err = True)
-    envvar = AppConfig.ENVIRONMENT_VARIABLE['local_ohlc_storage']
-    if not _check_environment_variable_set(envvar):
-        message = Color.warn("Local ohlc storage not defined.")
-        warnings.warn(message)
-        return None
-    else:
-        # ASSUMING 1d OHLC STORAGE -- TO BE FIXED
-        local_storage_path = os.path.join(os.getenv(envvar), '5m/')
-    local_storage_path = os.path.join(local_storage_path, ticker + '.h5')
-    if os.path.exists(local_storage_path):
-        hdf = pd.HDFStore(local_storage_path)
-        df = hdf.get(ticker)
-        col = "{h}:{m}_Volume".format(h=tt_hour, m=tt_min)
-        tt = pd.DataFrame(columns=[col], index=df.index.normalize().tz_localize(None).drop_duplicates())
-        tt[col] = [df.between_time("9:30", "{h}:{m}".format(h=tt_hour, m=tt_min)).loc["{y}-{m}-{d}".format(y=day.year, m=day.month, d=day.day)]["Volume"].sum() for day in tt.index]
-        return tt
-    else:
-        raise ValueError("Local OHLC Storage Not Found")
+def _get_time_low(data, tt_hour, tt_min):
+    _check_pandas_dataframe(data, raise_err = True)
+    _check_int(tt_hour, raise_err = True)
+    _check_int(tt_min, raise_err = True)
+    close = _get_time_close(data, tt_hour, tt_min)
+
+    col = "{h}{m}_Low".format(h=tt_hour, m=tt_min)
+    tt = pd.DataFrame(columns=[col], index=data.index.normalize().tz_localize(None).drop_duplicates())
+    tt[col] = [data.between_time("9:30", "{h}:{m}".format(h=tt_hour, m=tt_min)).loc["{y}-{m}-{d}".format(y=day.year, m=day.month, d=day.day)]["Low"].min() for day in tt.index] 
+    tt[col] = (close.values - tt.values) / close.values
+    return tt
+
+def _get_time_volume(data, tt_hour, tt_min):
+    _check_pandas_dataframe(data, raise_err = True)
+    _check_int(tt_hour, raise_err = True)
+    _check_int(tt_min, raise_err = True)
+    col = "{h}{m}_Volume".format(h=tt_hour, m=tt_min)
+    tt = pd.DataFrame(columns=[col], index=data.index.normalize().tz_localize(None).drop_duplicates())
+    tt[col] = [data.between_time("9:30", "{h}:{m}".format(h=tt_hour, m=tt_min)).loc["{y}-{m}-{d}".format(y=day.year, m=day.month, d=day.day)]["Volume"].sum() for day in tt.index]
+    return tt
     
 def _get_close_m_52w_high_low(data):
     _check_pandas_dataframe(data, raise_err = True)
-
     n = int(252/52 * 52)
-
     high_low = pd.DataFrame(np.nan, columns=["52W_High", "52W_Low"], index = data.index)
     high_low["52W_High"] = (data['High'].rolling(window = n).max() - data['Close']) / data['Close']
     high_low["52W_Low"] = (data['Low'].rolling(window = n).min() - data['Close']) / data['Close']
@@ -296,7 +267,7 @@ def _get_awesome(data):
 
     attrs = ["High", "Low"]
     df = data[attrs]
-    avg = pd.Series((df['High'] + df['Low'])/2)
+    avg = pd.DataFrame((df['High'] + df['Low'])/2, columns=["Awesome"], index=data.index)
 
     roll_34 = avg.rolling(window = 34)
     roll_5 = avg.rolling(window = 5)
@@ -334,8 +305,9 @@ def _get_bollinger_bands(data, period = 50, bandwidth = 1):
     roll      = data.rolling(window = period)
     std, mean = roll.std(), roll.mean()
 
-    upper     = mean + bandwidth * std
-    lower     = mean - bandwidth * std
+    upper     = ((mean + bandwidth * std) - data) / data
+    lower     = (data - (mean - bandwidth * std)) / data
+    mean = (data - roll.mean())/data
 
     return (lower, mean, upper)
 
@@ -379,47 +351,30 @@ class Share(Entity):
         self._splits_base = 5
 
     def update(self, start = None, end = None, latest = None, cache = False, local_update = False):
-        '''
-        Update the share with the latest available data.
-
-        :Example:
-
-        >>> import bulbea as bb
-        >>> share = bb.Share(source = 'YAHOO', ticker = 'AAPL')
-        >>> share.update()
-        '''
-        if not local_update:
-            _check_str(self.source, raise_err = True)
-            envvar = AppConfig.ENVIRONMENT_VARIABLE['quandl_api_key']
-            if not _check_environment_variable_set(envvar):
-                message = Color.warn("Environment variable {envvar} for Quandl hasn't been set. A maximum of {max_calls} calls per day can be made. Visit {url} to get your API key.".format(envvar = envvar, max_calls = QUANDL_MAX_DAILY_CALLS, url = ABSURL_QUANDL))
-
-                warnings.warn(message)
-            else:
-                quandl.ApiConfig.api_key = os.getenv(envvar)
-
-            self.data    = quandl.get('{database}/{code}'.format(
-                database = self.source,
-                code     = self.ticker
-            ))
+        envvar = AppConfig.ENVIRONMENT_VARIABLE['local_ohlc_storage']
+        if not _check_environment_variable_set(envvar):
+            message = Color.warn("Local ohlc storage not defined.")
+            warnings.warn(message)
+            return None
         else:
-            envvar = AppConfig.ENVIRONMENT_VARIABLE['local_ohlc_storage']
-            if not _check_environment_variable_set(envvar):
-                message = Color.warn("Local ohlc storage not defined.")
-                warnings.warn(message)
-                return None
-            else:
-                # ASSUMING 1d OHLC STORAGE -- TO BE FIXED
-                local_storage_path = os.path.join(os.getenv(envvar), '1d/')
-                local_storage_path = os.path.join(local_storage_path, self.ticker + '.h5')
+            # ASSUMING 1d OHLC STORAGE -- TO BE FIXED
+            local_storage_path = os.path.join(os.getenv(envvar), '1d/')
+            local_storage_path = os.path.join(local_storage_path, self.ticker + '.h5')
+            hdf = pd.HDFStore(local_storage_path)
+            df = hdf.get(self.ticker)
+            hdf.close()
+            if start == None:
+                start = df.index[0]
+            if end == None:
+                end = df.index[-1]
+            self.data = df.loc[start:end]
+
+            local_storage_path = os.path.join(os.getenv(envvar), '5m/')
+            local_storage_path = os.path.join(local_storage_path, self.ticker + '.h5')
+            if os.path.exists(local_storage_path):
                 hdf = pd.HDFStore(local_storage_path)
-                df = hdf.get(self.ticker)
+                self.data_5m = hdf.get(self.ticker)
                 hdf.close()
-                if start == None:
-                    start = df.index[0]
-                if end == None:
-                    end = df.index[-1]
-                self.data = df.loc[start:end]
 
         self.length  =  len(self.data)
         self.attrs   = list(self.data.columns)
@@ -470,21 +425,9 @@ class Share(Entity):
         return roc
 
     def close_slope(self):
-        return self.week_month_3month_slope('Close')
-
-    def week_month_3month_slope(self, attr='Close'):
-        data = pd.DataFrame(self.data[attr])
-        columns = ['1W_', '1M_', '3M_', '1Y_']
-        columns = [col+attr for col in columns]
-
-        slope = [_get_period_slope(data, days) for days in [5, 20, 60, 252]]
-        slope = pd.concat(slope, axis=1, sort=True)
-        slope.columns = columns
-
-        return slope
+        return _get_close_slope(self.data)
 
     def encoded_days(self):
-        data = self.data[['Close']]
         return _get_encoded_days(data)
 
     def ichimoku(self):
@@ -531,38 +474,36 @@ class Share(Entity):
         return _get_consecutive_closings(self.data)
 
     def open_shift(self):
-        data = self.data['Open'].shift(-1)
-        open_shift = pd.DataFrame(data.values, columns=['Open+1'], index=data.index)
-        return open_shift
+        return _get_df_shift(self.data, "Close")
 
     def low_shift(self):
         data = self.data['Low'].shift(-1)
         open_shift = pd.DataFrame(data.values, columns=['Low+1'], index=data.index)
         return open_shift
 
-    def prediction_time_close(self):
-        return _get_time_close(12, 30, self.ticker)
+    def close_1200(self):
+        return _get_time_close(self.data_5m, 12, 0)
 
-    def prediction_time_low(self):
-        return _get_time_low(12, 30, self.ticker)
+    def low_1200(self):
+        return _get_time_low(self.data_5m, 12, 0)
 
-    def prediction_time_high(self):
-        return _get_time_high(12, 30, self.ticker)
+    def high_1200(self):
+        return _get_time_high(self.data_5m, 12, 0)
 
-    def prediction_time_volume(self):
-        return _get_time_volume(12, 30, self.ticker)
+    def volume_1200(self):
+        return _get_time_volume(self.data_5m, 12, 0)
 
-    def trading_time_close(self):
-        return _get_time_close(15, 15, self.ticker)
+    def close_1515(self):
+        return _get_time_close(self.data_5m, 15, 15)
 
-    def trading_time_low(self):
-        return _get_time_low(15, 15, self.ticker)
+    def low_1515(self):
+        return _get_time_low(self.data_5m, 15, 15)
 
-    def trading_time_high(self):
-        return _get_time_high(15, 15, self.ticker)
+    def high_1515(self):
+        return _get_time_high(self.data_5m, 15, 15)
 
-    def trading_time_volume(self):
-        return _get_time_volume(15, 15, self.ticker)
+    def volume_1515(self):
+        return _get_time_volume(self.data_5m, 15, 15)
 
     def rsi(self):
         return _get_rsi(self.data)
@@ -738,8 +679,21 @@ class Share(Entity):
         if format_ is 'csv':
             self.data.to_csv(filename)
 
+    def prev_data(self):
+        cols = ["PrevClose", "PrevHigh", "PrevLow", "PrevVolume"]
+        data = pd.DataFrame(columns=cols, index=self.data.index)
+        prev = self.data.shift(1)
+        data["PrevClose"] = prev["Close"]
+        data["PrevVolume"] = prev["Volume"]
+        data["PrevHigh"] = (prev["High"] - prev["Close"]) / prev["Close"]
+        data["PrevLow"] = (prev["Close"] - prev["Low"]) / prev["Close"]
+        return data
+
     def return_data(self):
-        return self.data
+        data = self.data
+        data["High"] = (data["High"] - data["Close"]) / data["Close"]
+        data["Low"] = (data["Close"] - data["Low"]) / data["Close"]
+        return data
 
     def return_xcols(self, data):
         _check_type(data, np.ndarray, raise_err = True, expected_type_name = 'np.array')
