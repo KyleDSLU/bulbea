@@ -194,7 +194,16 @@ def _get_time_close(data, tt_hour, tt_min):
     _check_pandas_dataframe(data, raise_err = True)
     _check_int(tt_hour, raise_err = True)
     _check_int(tt_min, raise_err = True)
-    col = "{h}{m}_Close".format(h=tt_hour, m=tt_min)
+
+    tt_hour_str = str(tt_hour)
+    if len(tt_hour_str) < 2:
+        tt_hour_str = '0' + tt_hour_str
+
+    tt_min_str = str(tt_min)
+    if len(tt_min_str) < 2:
+        tt_min_str = '0' + tt_min_str
+
+    col = "{h}{m}_Close".format(h=tt_hour_str, m=tt_min_str)
     tt = pd.DataFrame(columns=[col], index=data.index.normalize().tz_localize(None).drop_duplicates())
     data = data['Close'].at_time('{h}:{m}'.format(h=tt_hour, m=tt_min))
     data.index = data.index.normalize().tz_localize(None)
@@ -208,7 +217,15 @@ def _get_time_high(data, tt_hour, tt_min):
     _check_int(tt_min, raise_err = True)
     close = _get_time_close(data, tt_hour, tt_min)
 
-    col = "{h}{m}_High".format(h=tt_hour, m=tt_min)
+    tt_hour_str = str(tt_hour)
+    if len(tt_hour_str) < 2:
+        tt_hour_str = '0' + tt_hour_str
+
+    tt_min_str = str(tt_min)
+    if len(tt_min_str) < 2:
+        tt_min_str = '0' + tt_min_str
+
+    col = "{h}{m}_High".format(h=tt_hour_str, m=tt_min_str)
     tt = pd.DataFrame(columns=[col], index=data.index.normalize().tz_localize(None).drop_duplicates())
     tt[col] = [data.between_time("9:30", "{h}:{m}".format(h=tt_hour, m=tt_min)).loc["{y}-{m}-{d}".format(y=day.year, m=day.month, d=day.day)]["High"].max() for day in tt.index]
     tt[col] = (tt.values - close.values) / close.values
@@ -220,7 +237,15 @@ def _get_time_low(data, tt_hour, tt_min):
     _check_int(tt_min, raise_err = True)
     close = _get_time_close(data, tt_hour, tt_min)
 
-    col = "{h}{m}_Low".format(h=tt_hour, m=tt_min)
+    tt_hour_str = str(tt_hour)
+    if len(tt_hour_str) < 2:
+        tt_hour_str = '0' + tt_hour_str
+
+    tt_min_str = str(tt_min)
+    if len(tt_min_str) < 2:
+        tt_min_str = '0' + tt_min_str
+
+    col = "{h}{m}_Low".format(h=tt_hour_str, m=tt_min_str)
     tt = pd.DataFrame(columns=[col], index=data.index.normalize().tz_localize(None).drop_duplicates())
     tt[col] = [data.between_time("9:30", "{h}:{m}".format(h=tt_hour, m=tt_min)).loc["{y}-{m}-{d}".format(y=day.year, m=day.month, d=day.day)]["Low"].min() for day in tt.index] 
     tt[col] = (close.values - tt.values) / close.values
@@ -230,7 +255,16 @@ def _get_time_volume(data, tt_hour, tt_min):
     _check_pandas_dataframe(data, raise_err = True)
     _check_int(tt_hour, raise_err = True)
     _check_int(tt_min, raise_err = True)
-    col = "{h}{m}_Volume".format(h=tt_hour, m=tt_min)
+
+    tt_hour_str = str(tt_hour)
+    if len(tt_hour_str) < 2:
+        tt_hour_str = '0' + tt_hour_str
+
+    tt_min_str = str(tt_min)
+    if len(tt_min_str) < 2:
+        tt_min_str = '0' + tt_min_str
+
+    col = "{h}{m}_Volume".format(h=tt_hour_str, m=tt_min_str)
     tt = pd.DataFrame(columns=[col], index=data.index.normalize().tz_localize(None).drop_duplicates())
     tt[col] = [data.between_time("9:30", "{h}:{m}".format(h=tt_hour, m=tt_min)).loc["{y}-{m}-{d}".format(y=day.year, m=day.month, d=day.day)]["Volume"].sum() for day in tt.index]
     return tt
@@ -368,12 +402,14 @@ class Share(Entity):
             if end == None:
                 end = df.index[-1]
             self.data = df.loc[start:end]
+            self.data['Volume'] = self.data['Volume'] / (1*10**6)
 
             local_storage_path = os.path.join(os.getenv(envvar), '5m/')
             local_storage_path = os.path.join(local_storage_path, self.ticker + '.h5')
             if os.path.exists(local_storage_path):
                 hdf = pd.HDFStore(local_storage_path)
                 self.data_5m = hdf.get(self.ticker)
+                self.data_5m['Volume'] = self.data_5m['Volume'] / (1*10**6)
                 hdf.close()
 
         self.length  =  len(self.data)
@@ -428,7 +464,7 @@ class Share(Entity):
         return _get_close_slope(self.data)
 
     def encoded_days(self):
-        return _get_encoded_days(data)
+        return _get_encoded_days(self.data)
 
     def ichimoku(self):
         '''
@@ -564,24 +600,16 @@ class Share(Entity):
 
         return frames[0] if len(frames) == 1 else frames
 
-    def build_data_prerequisites(self, prereq, comp_prereq=None):
+    def build_data_prerequisites(self, prereq):
         self.prereq = prereq
-        self.comp_prereq = comp_prereq
 
     def build_data(self):
-        try:
-            _check_iterable(self.prereq, raise_err = True)
-            df = self.data
-            for op in self.prereq:
-                df = pd.concat([df, op()], axis=1, sort=True)
-                df = df.dropna()
-            if self.comp_prereq:
-                for op in self.comp_prereq:
-                    df = pd.concat([df, op()], axis=1, sort=True)
-                    df = df.dropna()
-            self.features = df
-        except NameError as e:
-            raise Exception("Share prerequisites must be set")
+        _check_iterable(self.prereq, raise_err = True)
+        df = self.data
+        for op in self.prereq:
+            df = pd.concat([df, op()], axis=1, sort=True)
+            df = df.dropna()
+        self.features = df
 
     def build_splits(self,
                      Xattrs      = ['Close'],
